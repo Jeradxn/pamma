@@ -1,0 +1,350 @@
+# Regras do Cursor - Projeto Consulta de Preços Mercado Livre
+
+## 🎯 Diretrizes Gerais
+
+### Comunicação
+- **SEMPRE** responda em português brasileiro
+- Use linguagem técnica apropriada para engenharia de software
+- Seja claro e direto nas explicações
+
+### Qualidade do Código
+- Siga as melhores práticas do TypeScript e NestJS
+- Implemente padrões SOLID e Clean Architecture
+- Mantenha funções pequenas e focadas (máximo 20-30 linhas)
+- Evite duplicação de código - sempre verifique se já existe funcionalidade similar
+
+### Arquitetura
+- **Backend**: Use NestJS com arquitetura modular e decorators
+- **Frontend**: Use Component-Based Architecture com React
+- Implemente Custom Hooks para lógica de negócio
+- Service Layer para comunicação com APIs externas
+- Repository Pattern para acesso ao banco de dados
+- Mantenha componentes pequenos e reutilizáveis
+
+## 🏗️ Estrutura do Projeto
+
+### Organização de Arquivos
+```
+backend/              # Backend NestJS
+├── src/
+│   ├── products/     # Módulo de produtos
+│   ├── mercado-livre/ # Módulo de integração ML
+│   ├── common/       # Utilitários e decorators
+│   └── main.ts       # Arquivo principal
+
+frontend/             # Frontend React
+├── src/
+│   ├── components/   # Componentes React reutilizáveis
+│   │   ├── ProductTable/ # Tabela de produtos
+│   │   ├── PriceComparison/ # Comparação de preços
+│   │   └── SyncButton/   # Botão de sincronização
+│   ├── hooks/        # Custom hooks
+│   ├── services/     # Serviços externos
+│   ├── types/        # Tipos TypeScript
+│   ├── utils/        # Funções utilitárias
+│   └── pages/        # Páginas da aplicação
+
+docker/               # Configurações Docker
+├── Dockerfile.backend
+├── Dockerfile.frontend
+└── docker-compose.yml
+```
+
+### Padrões de Nomenclatura
+- **Componentes**: PascalCase (ex: `ProductTable`, `PriceComparison`)
+- **Hooks**: camelCase com prefixo use (ex: `useProducts`, `useMercadoLivre`)
+- **Serviços**: camelCase com sufixo Service (ex: `mercadoLivreService`)
+- **Arquivos**: PascalCase para componentes, camelCase para outros (ex: `ProductTable.tsx`, `useProducts.ts`)
+- **Variáveis e funções**: camelCase (ex: `getProductById`)
+
+## 🔧 Tecnologias e Dependências
+
+### Backend
+- **NestJS**: Framework Node.js com TypeScript
+- **Banco de Dados**: SQLite com TypeORM
+- **Validação**: Class-validator e class-transformer
+- **HTTP**: Express (via NestJS)
+
+### Frontend
+- **React**: 18+ com TypeScript
+- **UI**: Material-UI
+- **Estado**: React Hooks ou Context API
+- **HTTP**: Axios para APIs externas
+- **Planilha**: Excel.js ou similar
+- **Build**: Create React App
+
+### DevOps
+- **Containerização**: Docker e Docker Compose
+- **Deploy**: GitHub Pages (frontend), Vercel/Heroku (backend)
+- **CI/CD**: GitHub Actions (opcional)
+- **Monitoramento**: Console do navegador e logs
+
+## 📝 Padrões de Código
+
+### Tipos TypeScript
+```typescript
+export interface Product {
+  id: string;
+  sku: string;
+  name: string;
+  brand: string;
+  cost: number;
+  price: number;
+  stock: number;
+  ean?: string;
+  category?: string;
+  description?: string;
+}
+
+export interface PriceComparison {
+  product: Product;
+  mercadoLivrePrices: MercadoLivrePrice[];
+  costDifference: number;
+  priceRange: {
+    min: number;
+    max: number;
+    average: number;
+  };
+}
+
+export interface MercadoLivrePrice {
+  id: string;
+  title: string;
+  price: number;
+  seller: string;
+  condition: 'new' | 'used';
+  shipping: number;
+  totalPrice: number;
+}
+```
+
+### Custom Hooks
+```typescript
+import { useState, useEffect } from 'react';
+import { Product, MercadoLivrePrice } from '../types';
+import { mercadoLivreService } from '../services/mercadoLivreService';
+
+export const useProducts = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadProducts = async (file: File) => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Lógica para ler planilha Excel
+      const productsData = await readExcelFile(file);
+      setProducts(productsData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar produtos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { products, loading, error, loadProducts };
+};
+
+export const useMercadoLivre = () => {
+  const [prices, setPrices] = useState<MercadoLivrePrice[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const searchPrices = async (sku: string, ean?: string) => {
+    setLoading(true);
+    try {
+      const results = await mercadoLivreService.searchProduct(sku, ean);
+      setPrices(results);
+    } catch (error) {
+      console.error('Erro ao buscar preços:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { prices, loading, searchPrices };
+};
+```
+
+### Serviços
+```typescript
+import axios from 'axios';
+import { MercadoLivrePrice } from '../types';
+
+const MERCADO_LIVRE_API_BASE = 'https://api.mercadolibre.com';
+
+export const mercadoLivreService = {
+  async searchProduct(sku: string, ean?: string): Promise<MercadoLivrePrice[]> {
+    try {
+      // Busca por SKU ou EAN no Mercado Livre
+      const searchTerm = ean || sku;
+      const response = await axios.get(`${MERCADO_LIVRE_API_BASE}/sites/MLB/search`, {
+        params: {
+          q: searchTerm,
+          limit: 20
+        }
+      });
+
+      return response.data.results.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        price: item.price,
+        seller: item.seller.nickname,
+        condition: item.condition,
+        shipping: item.shipping?.free_shipping ? 0 : item.shipping?.cost || 0,
+        totalPrice: item.price + (item.shipping?.free_shipping ? 0 : item.shipping?.cost || 0)
+      }));
+    } catch (error) {
+      console.error('Erro na API do Mercado Livre:', error);
+      throw new Error('Falha ao buscar preços no Mercado Livre');
+    }
+  },
+
+  async getProductDetails(productId: string): Promise<any> {
+    try {
+      const response = await axios.get(`${MERCADO_LIVRE_API_BASE}/items/${productId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Erro ao buscar detalhes do produto:', error);
+      throw new Error('Falha ao buscar detalhes do produto');
+    }
+  }
+};
+```
+
+## 🧪 Testes
+
+### Estrutura de Testes
+```
+src/
+├── __tests__/        # Testes da aplicação
+│   ├── components/   # Testes dos componentes
+│   ├── hooks/        # Testes dos custom hooks
+│   └── services/     # Testes dos serviços
+├── __mocks__/        # Mocks para testes
+└── test-utils/       # Utilitários de teste
+```
+
+### Padrões de Teste
+- Use Jest e React Testing Library
+- Mock APIs externas (Mercado Livre)
+- Teste casos de sucesso e erro
+- Teste interações do usuário
+- Use MSW para mock de APIs
+
+## 🔒 Segurança
+
+### Autenticação
+- JWT tokens com expiração
+- Refresh tokens
+- Hash de senhas com bcrypt
+- Rate limiting nas APIs
+
+### Autorização
+- Sistema de roles e permissões
+- Middleware de autorização
+- Validação de entrada em todas as APIs
+- Sanitização de dados
+
+## 📊 Logs e Monitoramento
+
+### Logs
+- Use structlog para logs estruturados
+- Log todos os eventos importantes
+- Inclua correlation IDs para rastreamento
+- Diferentes níveis por ambiente
+
+### Métricas
+- Prometheus para métricas
+- Grafana para dashboards
+- Alertas para falhas críticas
+- Health checks para APIs
+
+## 🚀 Deploy e Ambiente
+
+### Configurações
+- Use variáveis de ambiente para configurações
+- Diferentes configs por ambiente (dev, test, prod)
+- Validação de configurações na inicialização
+- Secrets gerenciados de forma segura
+
+### Docker
+- Multi-stage builds para otimização
+- Health checks nos containers
+- Volumes para dados persistentes
+- Networks isoladas
+
+## 🔄 Processo de Desenvolvimento
+
+### Commits
+- Use Conventional Commits
+- Mensagens em português
+- Referencie issues/tasks nos commits
+
+### Code Review
+- Revisão obrigatória para PRs
+- Checklist de qualidade
+- Testes devem passar
+- Cobertura de código mantida
+
+### Refatoração
+- Refatore quando arquivos passarem de 300 linhas
+- Mantenha funções pequenas e focadas
+- Use princípios SOLID para decisões de refatoração
+- Documente mudanças arquiteturais
+
+## 📚 Documentação
+
+### Código
+- Docstrings em todas as funções públicas
+- Type hints obrigatórios
+- README atualizado
+- API docs com Swagger/OpenAPI
+
+### Arquitetura
+- Diagramas de arquitetura
+- Decision records para decisões importantes
+- Guias de desenvolvimento
+- Troubleshooting guides
+
+## 🎯 Regras Específicas do Projeto
+
+### Integração Mercado Livre
+- Implemente retry logic com exponential backoff
+- Use circuit breaker para falhas
+- Cache dados frequentemente acessados
+- Log todas as operações de sincronização
+
+### Integração Bling
+- Valide dados antes do envio
+- Implemente fallback para falhas
+- Sincronização incremental quando possível
+- Monitoramento de performance
+
+### Planilha
+- Validação robusta de dados
+- Mapeamento configurável de campos
+- Tratamento de erros de formato
+- Backup automático antes de importações
+
+## ⚠️ Anti-patterns a Evitar
+
+- ❌ Não use variáveis globais
+- ❌ Não implemente lógica de negócio em controllers
+- ❌ Não ignore tratamento de erros
+- ❌ Não use strings mágicas
+- ❌ Não implemente dependências circulares
+- ❌ Não ignore logs de auditoria
+- ❌ Não use exceções para controle de fluxo
+
+## ✅ Checklist de Qualidade
+
+Antes de submeter código:
+- [ ] Código segue padrões definidos
+- [ ] Testes passam e cobertura > 90%
+- [ ] Logs implementados para operações críticas
+- [ ] Documentação atualizada
+- [ ] Validação de entrada implementada
+- [ ] Tratamento de erros adequado
+- [ ] Performance aceitável
+- [ ] Segurança implementada
